@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #e8f1ec; font: 15px Arial, sans-serif; }
+    .chat { width: min(680px, 94vw); height: min(760px, 92vh); display: flex; flex-direction: column; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 28px #0002; }
+    header { padding: 16px; background: #075e54; color: #fff; }
+    header h1 { margin: 0 0 10px; font-size: 18px; }
+    .connection, .recipient { display: flex; gap: 8px; }
+    input, button { border: 1px solid #c7d0cc; border-radius: 7px; padding: 10px; font: inherit; }
+    #serverUrl { flex: 1; }
+    #recipient { flex: 1; }
+    button { border: 0; cursor: pointer; background: #128c7e; color: #fff; font-weight: 600; }
+    button:disabled { cursor: not-allowed; opacity: .6; }
+    #status { padding: 8px 16px; background: #f1f6f3; color: #57635e; font-size: 13px; }
+    #messages { flex: 1; padding: 16px; overflow-y: auto; background: #efeae2; display: flex; flex-direction: column; gap: 8px; }
+    .message { max-width: 78%; width: fit-content; padding: 9px 12px; border-radius: 8px; background: #fff; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .message.mine { align-self: flex-end; background: #d9fdd3; }
+    .message.system { align-self: center; max-width: 100%; background: #ffffffaa; color: #58615c; font-size: 12px; }
+    form { display: flex; gap: 8px; padding: 12px; background: #f0f2f5; }
+    #message { flex: 1; }
+  </style>
+</head>
+<body>
+  <main class="chat">
+    <header>
+      <h1>WebSocket Chat</h1>
+      <div class="connection">
+        <input id="serverUrl" aria-label="WebSocket server URL" value="ws://127.0.0.1:8080">
+        <button id="connectButton" type="button">Connect</button>
+      </div>
+      <div class="recipient" style="margin-top: 8px;">
+        <input id="clientId" aria-label="My client ID" placeholder="My client ID">
+      </div>
+      <div class="recipient" style="margin-top: 8px;">
+        <input id="recipient" aria-label="Send messages to" placeholder="Send messages to, e.g. bhavik">
+      </div>
+    </header>
+    <div id="status">Disconnected</div>
+    <section id="messages" aria-live="polite"></section>
+    <form id="messageForm">
+      <input id="message" autocomplete="off" placeholder="Type a message" disabled>
+      <button id="sendButton" disabled>Send</button>
+    </form>
+  </main>
+
+  <script>
+    const urlInput = document.querySelector('#serverUrl');
+    const connectButton = document.querySelector('#connectButton');
+    const clientIdInput = document.querySelector('#clientId');
+    const recipientInput = document.querySelector('#recipient');
+    const messageInput = document.querySelector('#message');
+    const sendButton = document.querySelector('#sendButton');
+    const messages = document.querySelector('#messages');
+    const status = document.querySelector('#status');
+    let socket = null;
+    let clientId = '';
+
+    // A separate browser tab receives its own ID. The chosen ID survives a
+    // refresh of this tab, but may still be edited before connecting.
+    const savedClientId = sessionStorage.getItem('websocketChatClientId');
+    clientIdInput.value = savedClientId || `web-${crypto.randomUUID().slice(0, 8)}`;
+
+    function addMessage(text, kind = '') {
+      const item = document.createElement('div');
+      item.className = `message ${kind}`;
+      item.textContent = text;
+      messages.append(item);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setConnected(connected) {
+      connectButton.textContent = connected ? 'Disconnect' : 'Connect';
+      messageInput.disabled = !connected;
+      sendButton.disabled = !connected;
+      urlInput.disabled = connected;
+      clientIdInput.disabled = connected;
+      status.textContent = connected ? 'Connected' : 'Disconnected';
+    }
+
+    function connect() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+        return;
+      }
+      try {
+        clientId = clientIdInput.value.trim();
+        if (!clientId) throw new Error('Enter your client ID first.');
+        sessionStorage.setItem('websocketChatClientId', clientId);
+        const serverUrl = new URL(urlInput.value.trim());
+        serverUrl.searchParams.set('clientId', clientId);
+        socket = new WebSocket(serverUrl);
+      } catch (error) {
+        addMessage(`Invalid URL: ${error.message}`, 'system');
+        return;
+      }
+      status.textContent = 'Connecting…';
+      socket.onopen = () => { setConnected(true); addMessage('Connected to server.', 'system'); };
+      socket.onclose = () => { setConnected(false); addMessage('Connection closed.', 'system'); };
+      socket.onerror = () => addMessage('WebSocket error.', 'system');
+      socket.onmessage = ({ data }) => {
+        try {
+          const packet = JSON.parse(data);
+          if (packet.type === 'Welcome') {
+            addMessage(`Your client ID is: ${packet.clientId}`, 'system');
+          } else if (packet.type === 'ChatMessage') {
+            addMessage(`${packet.senderId}: ${packet.message}`);
+          } else if (packet.type === 'DeliveryStatus' || packet.type === 'DeliveryError') {
+            addMessage(packet.message, 'system');
+          }
+        } catch {
+          addMessage(String(data));
+        }
+      };
+    }
+
+    connectButton.addEventListener('click', connect);
+    document.querySelector('#messageForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = messageInput.value.trim();
+      const recipient = recipientInput.value.trim();
+      if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (!recipient) {
+        addMessage('Enter a recipient client ID first.', 'system');
+        return;
+      }
+      socket.send(JSON.stringify({ type: 'DirectMessage', to: recipient, message: text }));
+      addMessage(text, 'mine');
+      messageInput.value = '';
+      messageInput.focus();
+    });
+  </script>
+</body>
+</html>

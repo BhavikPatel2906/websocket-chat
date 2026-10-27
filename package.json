@@ -1,0 +1,13 @@
+{
+  "name": "directsocket-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Direct messaging between C++ terminal clients and browser clients through a Node.js WebSocket relay.",
+  "main": "websocket-server.js",
+  "scripts": {
+    "start": "node websocket-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
