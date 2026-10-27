@@ -2,6 +2,11 @@
 
 A lightweight direct-message chat system connecting C++ terminal clients and browser clients through a Node.js WebSocket relay.
 
+## Project links
+
+- [View the project on GitHub](https://github.com/BhavikPatel2906/websocket-chat)
+- [Download the project as a ZIP](https://github.com/BhavikPatel2906/websocket-chat/archive/refs/heads/main.zip)
+
 ## Install and run
 
 ```bash
